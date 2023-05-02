@@ -2,7 +2,7 @@
 This module forms the apecs Prelude.
 It selectively re-exports the user-facing functions from the submodules.
 -}
-module Apecs (
+module Apecs.Linear (
   -- * Core types
     SystemT(..), System, Component(..), Entity(..), Has(..), Not(..),
     Get, Set, Destroy, Members,
@@ -20,20 +20,22 @@ module Apecs (
 
   -- * Other
     runSystem, runWith,
-    runGC, EntityCounter, newEntity, newEntity_, global,
-    makeWorld, makeWorldAndComponents,
+    -- runGC,
+    EntityCounter, newEntity, newEntity_, global,
+    -- makeWorld, makeWorldAndComponents,
 
   -- * Re-exports
-    asks, ask, liftIO, lift, Proxy (..)
+    -- asks, ask, liftIO, lift,
+    Proxy (..)
 ) where
 
-import           Control.Monad.IO.Class (liftIO)
-import           Control.Monad.Reader (ask, asks, lift)
+-- import           Control.Monad.IO.Class (liftIO)
+-- import           Control.Monad.Reader (ask, asks, lift)
 import           Data.Proxy
 
 import           Apecs.Components
 import           Apecs.Core
 import           Apecs.Stores
 import           Apecs.System
-import           Apecs.TH
+-- import           Apecs.TH
 import           Apecs.Util

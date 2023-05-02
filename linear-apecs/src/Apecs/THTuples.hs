@@ -3,8 +3,11 @@
 
 module Apecs.THTuples where
 
+import qualified Prelude
 import qualified Data.Vector.Unboxed as U
 import           Language.Haskell.TH
+import qualified Control.Functor.Linear as Linear
+import Prelude.Base
 
 {--
 instance (Component a, Component b) => Component (a, b) where

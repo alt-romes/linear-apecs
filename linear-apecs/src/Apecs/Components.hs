@@ -14,9 +14,13 @@
 module Apecs.Components where
 
 import Data.Functor.Identity
+import qualified Prelude.Base
+import qualified Data.Unrestricted.Linear as Ur
 
 import           Apecs.Core
 import qualified Apecs.THTuples as T
+import Control.Functor.Linear as Linear
+import qualified Data.Vector.Unboxed  as U
 
 -- | Identity component. @Identity c@ is equivalent to @c@, so mostly useless.
 instance Component c => Component (Identity c) where
@@ -24,13 +28,13 @@ instance Component c => Component (Identity c) where
 
 instance Has w m c => Has w m (Identity c) where
   {-# INLINE getStore #-}
-  getStore = Identity <$> getStore
+  getStore = Ur.lift Identity <$> getStore
 
 type instance Elem (Identity s) = Identity (Elem s)
 
 instance ExplGet m s => ExplGet m (Identity s) where
   {-# INLINE explGet #-}
-  explGet (Identity s) e = Identity <$> explGet s e
+  explGet (Identity s) e = Ur.lift Identity <$> explGet s e
   {-# INLINE explExists  #-}
   explExists  (Identity s) = explExists s
 
@@ -44,7 +48,12 @@ instance ExplDestroy m s => ExplDestroy m (Identity s) where
   {-# INLINE explDestroy #-}
   explDestroy (Identity s) = explDestroy s
 
-T.makeInstances [2..8]
+-- ROMES:TODO: T.makeInstances [2..8]
+instance (ExplMembers m s1, ExplMembers m s2) => ExplMembers m (s1, s2) where
+  explMembers (s1,s2) = Linear.do
+    Ur u1 <- explMembers s1
+    Ur u2 <- explMembers s2
+    pure $ Ur $ u1 U.++ u2
 
 -- | Pseudocomponent indicating the absence of @a@.
 --   Mainly used as e.g. @cmap $ \(a, Not b) -> c@ to iterate over entities with an @a@ but no @b@.
@@ -59,15 +68,15 @@ instance Component c => Component (Not c) where
 
 instance (Has w m c) => Has w m (Not c) where
   {-# INLINE getStore #-}
-  getStore = NotStore <$> getStore
+  getStore = Ur.lift NotStore <$> getStore
 
 type instance Elem (NotStore s) = Not (Elem s)
 
 instance ExplGet m s => ExplGet m (NotStore s) where
   {-# INLINE explGet #-}
-  explGet _ _ = return Not
+  explGet _ _ = return (Ur Not)
   {-# INLINE explExists #-}
-  explExists (NotStore sa) ety = not <$> explExists sa ety
+  explExists (NotStore sa) ety = Ur.lift Prelude.Base.not <$> explExists sa ety
 
 instance ExplDestroy m s => ExplSet m (NotStore s) where
   {-# INLINE explSet #-}
@@ -82,17 +91,17 @@ instance Component c => Component (Maybe c) where
 
 instance (Has w m c) => Has w m (Maybe c) where
   {-# INLINE getStore #-}
-  getStore = MaybeStore <$> getStore
+  getStore = Ur.lift MaybeStore <$> getStore
 
 type instance Elem (MaybeStore s) = Maybe (Elem s)
 
 instance ExplGet m s => ExplGet m (MaybeStore s) where
   {-# INLINE explGet #-}
-  explGet (MaybeStore sa) ety = do
-    e <- explExists sa ety
-    if e then Just <$> explGet sa ety
-         else return Nothing
-  explExists _ _ = return True
+  explGet (MaybeStore sa) ety = Linear.do
+    Ur e <- explExists sa ety
+    if e then Ur.lift Just <$> explGet sa ety
+         else return (Ur Nothing)
+  explExists _ _ = return (Ur True)
 
 instance (ExplDestroy m s, ExplSet m s) => ExplSet m (MaybeStore s) where
   {-# INLINE explSet #-}
@@ -107,22 +116,22 @@ data EitherStore sa sb = EitherStore sa sb
 instance (Component ca, Component cb) => Component (Either ca cb) where
   type Storage (Either ca cb) = EitherStore (Storage ca) (Storage cb)
 
-instance (Has w m ca, Has w m cb) => Has w m (Either ca cb) where
+instance (Dupable w, Has w m ca, Has w m cb) => Has w m (Either ca cb) where
   {-# INLINE getStore #-}
-  getStore = EitherStore <$> getStore <*> getStore
+  getStore = Ur.lift2 EitherStore <$> getStore <*> getStore
 
 type instance Elem (EitherStore sa sb) = Either (Elem sa) (Elem sb)
 
 instance (ExplGet m sa, ExplGet m sb) => ExplGet m (EitherStore sa sb) where
   {-# INLINE explGet #-}
-  explGet (EitherStore sa sb) ety = do
-    e <- explExists sb ety
-    if e then Right <$> explGet sb ety
-         else Left <$> explGet sa ety
+  explGet (EitherStore sa sb) ety = Linear.do
+    Ur e <- explExists sb ety
+    if e then Ur.lift Right <$> explGet sb ety
+         else Ur.lift Left <$> explGet sa ety
   {-# INLINE explExists #-}
-  explExists (EitherStore sa sb) ety = do
-    e <- explExists sb ety
-    if e then return True
+  explExists (EitherStore sa sb) ety = Linear.do
+    Ur e <- explExists sb ety
+    if e then return (Ur True)
          else explExists sa ety
 
 instance (ExplSet m sa, ExplSet m sb) => ExplSet m (EitherStore sa sb) where
@@ -137,17 +146,17 @@ instance (ExplDestroy m sa, ExplDestroy m sb)
     explDestroy sa ety >> explDestroy sb ety
 
 -- Unit instances ()
-instance Monad m => Has w m () where
+instance (Dupable w, Monad m) => Has w m () where
   {-# INLINE getStore #-}
-  getStore = return ()
+  getStore = return (Ur ())
 instance Component () where
   type Storage () = ()
 type instance Elem () = ()
 instance Monad m => ExplGet m () where
   {-# INLINE explExists #-}
-  explExists _ _ = return True
+  explExists _ _ = return (Ur True)
   {-# INLINE explGet #-}
-  explGet _ _ = return ()
+  explGet _ _ = return (Ur ())
 instance Monad m => ExplSet m () where
   {-# INLINE explSet #-}
   explSet _ _ _ = return ()
@@ -160,7 +169,7 @@ instance Monad m => ExplDestroy m () where
 --   Since the above can be written more consicely as @cmap $ \(_ :: a) -> b@, it is rarely directly.
 --   More interestingly, we can define reusable filters like @movables = Filter :: Filter (Position, Velocity)@.
 --   Note that 'Filter c' is equivalent to 'Not (Not c)'.
-data Filter c = Filter deriving (Eq, Show)
+data Filter c = Filter deriving (Prelude.Base.Eq, Show)
 
 -- Pseudostore for 'Filter'.
 newtype FilterStore s = FilterStore s
@@ -170,13 +179,13 @@ instance Component c => Component (Filter c) where
 
 instance Has w m c => Has w m (Filter c) where
   {-# INLINE getStore #-}
-  getStore = FilterStore <$> getStore
+  getStore = Ur.lift FilterStore <$> getStore
 
 type instance Elem (FilterStore s) = Filter (Elem s)
 
 instance ExplGet m s => ExplGet m (FilterStore s) where
   {-# INLINE explGet #-}
-  explGet _ _ = return Filter
+  explGet _ _ = return (Ur Filter)
   {-# INLINE explExists #-}
   explExists (FilterStore s) ety = explExists s ety
 
@@ -191,13 +200,13 @@ data EntityStore = EntityStore
 instance Component Entity where
   type Storage Entity = EntityStore
 
-instance Monad m => Has w m Entity where
+instance (Dupable w, Monad m) => Has w m Entity where
   {-# INLINE getStore #-}
-  getStore = return EntityStore
+  getStore = return (Ur EntityStore)
 
 type instance Elem EntityStore = Entity
 instance Monad m => ExplGet m EntityStore where
   {-# INLINE explGet #-}
-  explGet _ ety = return $ Entity ety
+  explGet _ ety = return (Ur $ Entity ety)
   {-# INLINE explExists #-}
-  explExists _ _ = return True
+  explExists _ _ = return (Ur True)

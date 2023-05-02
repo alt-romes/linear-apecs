@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -17,12 +17,15 @@ module Apecs.Stores
     -- Register, regLookup
   ) where
 
-import           Control.Monad
-import           Control.Monad.IO.Class
-import           Control.Monad.Reader
+import qualified Prelude.Base as Base
+import qualified Control.Monad as Base
+import qualified Data.Unrestricted.Linear as Ur
+import           Control.Functor.Linear as Linear
+import           Control.Monad.IO.Class.Linear
+import           System.IO.Linear
+import           Data.IORef (IORef, modifyIORef')
 import           Data.Bits                   (shiftL, (.&.))
 import qualified Data.IntMap.Strict          as M
-import           Data.IORef
 import           Data.Proxy
 import           Data.Typeable               (Typeable, typeRep)
 import qualified Data.Vector.Mutable         as VM
@@ -37,13 +40,13 @@ newtype Map c = Map (IORef (M.IntMap c))
 
 type instance Elem (Map c) = c
 instance MonadIO m => ExplInit m (Map c) where
-  explInit = liftIO$ Map <$> newIORef mempty
+  explInit = liftIO$ Ur.lift Map <$> newIORef Base.mempty
 
 instance (MonadIO m, Typeable c) => ExplGet m (Map c) where
-  explExists (Map ref) ety = liftIO$ M.member ety <$> readIORef ref
-  explGet    (Map ref) ety = liftIO$ flip fmap (M.lookup ety <$> readIORef ref) $ \case
-    Just c -> c
-    notFound -> error $ unwords
+  explExists (Map ref) ety = liftIO$ Ur.lift (M.member ety) <$> readIORef ref
+  explGet    (Map ref) ety = liftIO$ flip fmap (Ur.lift (M.lookup ety) <$> readIORef ref) $ \case
+    Ur (Just c) -> Ur c
+    Ur notFound -> error $ unwords
       [ "Reading non-existent Map component"
       , show (typeRep notFound)
       , "for entity"
@@ -54,17 +57,18 @@ instance (MonadIO m, Typeable c) => ExplGet m (Map c) where
 
 instance MonadIO m => ExplSet m (Map c) where
   {-# INLINE explSet #-}
-  explSet (Map ref) ety x = liftIO$
+  explSet (Map ref) ety x = liftSystemIO$
     modifyIORef' ref (M.insert ety x)
 
 instance MonadIO m => ExplDestroy m (Map c) where
   {-# INLINE explDestroy #-}
-  explDestroy (Map ref) ety = liftIO$
-    readIORef ref >>= writeIORef ref . M.delete ety
+  explDestroy (Map ref) ety = liftIO $ Linear.do
+    Ur x <- readIORef ref
+    writeIORef ref (M.delete ety x)
 
 instance MonadIO m => ExplMembers m (Map c) where
   {-# INLINE explMembers #-}
-  explMembers (Map ref) = liftIO$ U.fromList . M.keys <$> readIORef ref
+  explMembers (Map ref) = liftIO$ Ur.lift (U.fromList Base.. M.keys) <$> readIORef ref
 
 -- | A Unique contains zero or one component.
 --   Writing to it overwrites both the previous component and its owner.
@@ -72,19 +76,19 @@ instance MonadIO m => ExplMembers m (Map c) where
 newtype Unique c = Unique (IORef (Maybe (Int, c)))
 type instance Elem (Unique c) = c
 instance MonadIO m => ExplInit m (Unique c) where
-  explInit = liftIO$ Unique <$> newIORef Nothing
+  explInit = liftIO$ Ur.lift Unique <$> newIORef Nothing
 
 instance (MonadIO m, Typeable c) => ExplGet m (Unique c) where
   {-# INLINE explGet #-}
   explGet (Unique ref) _ = liftIO$ flip fmap (readIORef ref) $ \case
-    Just (_, c)  -> c
-    notFound -> error $ unwords
+    Ur (Just (_, c))  -> Ur c
+    Ur notFound -> error $ unwords
       [ "Reading non-existent Unique component"
       , show (typeRep notFound)
       ]
 
   {-# INLINE explExists #-}
-  explExists (Unique ref) ety = liftIO$ maybe False ((==ety) . fst) <$> readIORef ref
+  explExists (Unique ref) ety = liftIO$ Ur.lift (Base.maybe False ((Base.== ety) Base.. Base.fst)) <$> readIORef ref
 
 instance MonadIO m => ExplSet m (Unique c) where
   {-# INLINE explSet #-}
@@ -92,14 +96,19 @@ instance MonadIO m => ExplSet m (Unique c) where
 
 instance MonadIO m => ExplDestroy m (Unique c) where
   {-# INLINE explDestroy #-}
-  explDestroy (Unique ref) ety = liftIO$ readIORef ref >>=
-    mapM_ (flip when (writeIORef ref Nothing) . (==ety) . fst)
+  explDestroy (Unique ref) ety = Linear.do
+    Ur x <- liftIO (readIORef ref)
+    case x of
+      Nothing -> pure ()
+      Just (i, _)
+        | i == ety  -> liftIO (writeIORef ref Nothing)
+        | otherwise -> pure ()
 
 instance MonadIO m => ExplMembers m (Unique c) where
   {-# INLINE explMembers #-}
   explMembers (Unique ref) = liftIO$ flip fmap (readIORef ref) $ \case
-    Nothing -> mempty
-    Just (ety, _) -> U.singleton ety
+    Ur Nothing -> Ur Base.mempty
+    Ur (Just (ety, _)) -> Ur (U.singleton ety)
 
 -- | A 'Global' contains exactly one component.
 --   The initial value is 'mempty' from the component's 'Monoid' instance.
@@ -113,13 +122,13 @@ newtype Global c = Global (IORef c)
 type instance Elem (Global c) = c
 instance (Monoid c, MonadIO m) => ExplInit m (Global c) where
   {-# INLINE explInit #-}
-  explInit = liftIO$ Global <$> newIORef mempty
+  explInit = liftIO$ Ur.lift Global <$> newIORef mempty
 
 instance MonadIO m => ExplGet m (Global c) where
   {-# INLINE explGet #-}
   explGet (Global ref) _ = liftIO$ readIORef ref
   {-# INLINE explExists #-}
-  explExists _ _ = return True
+  explExists _ _ = return (Ur True)
 
 instance MonadIO m => ExplSet m (Global c) where
   {-# INLINE explSet #-}
@@ -155,57 +164,60 @@ type instance Elem (Cache n s) = Elem s
 
 instance (MonadIO m, ExplInit m s, KnownNat n, Cachable s) => ExplInit m (Cache n s) where
   {-# INLINE explInit #-}
-  explInit = do
+  explInit = Linear.do
     let n = fromIntegral$ natVal (Proxy @n) :: Int
-        size = head . dropWhile (<n) $ iterate (`shiftL` 1) 1
+        size = Base.head Base.. Base.dropWhile (Base.<n) $ Base.iterate (`shiftL` 1) 1
         mask = size - 1
-    tags <- liftIO$ UM.replicate size (-2)
-    cache <- liftIO$ VM.replicate size cacheMiss
-    child <- explInit
-    return (Cache mask tags cache child)
+    Ur tags  <- liftSystemIOU$ UM.replicate size (-2)
+    Ur cache <- liftSystemIOU$ VM.replicate size cacheMiss
+    Ur child <- explInit
+    return $ Ur $ Cache mask tags cache child
 
 instance (MonadIO m, ExplGet m s) => ExplGet m (Cache n s) where
   {-# INLINE explGet #-}
-  explGet (Cache mask tags cache s) ety = do
+  explGet (Cache mask tags cache s) ety = Linear.do
     let index = ety .&. mask
-    tag <- liftIO$ UM.unsafeRead tags index
+    tag <- liftSystemIO $ UM.unsafeRead tags index
     if tag == ety
-       then liftIO$ VM.unsafeRead cache index
+       then liftSystemIOU $ VM.unsafeRead cache index
        else explGet s ety
 
   {-# INLINE explExists #-}
-  explExists (Cache mask tags _ s) ety = do
-    tag <- liftIO$ UM.unsafeRead tags (ety .&. mask)
-    if tag == ety then return True else explExists s ety
+  explExists (Cache mask tags _ s) ety = Linear.do
+    tag <- liftSystemIO$ UM.unsafeRead tags (ety .&. mask)
+    if tag == ety then return (Ur True) else explExists s ety
 
 instance (MonadIO m, ExplSet m s) => ExplSet m (Cache n s) where
   {-# INLINE explSet #-}
-  explSet (Cache mask tags cache s) ety x = do
+  explSet (Cache mask tags cache s) ety x = Linear.do
     let index = ety .&. mask
-    tag <- liftIO$ UM.unsafeRead tags index
-    when (tag /= (-2) && tag /= ety) $ do
-      cached <- liftIO$ VM.unsafeRead cache index
-      explSet s tag cached
-    liftIO$ UM.unsafeWrite tags  index ety
-    liftIO$ VM.unsafeWrite cache index x
+    Ur tag <- liftSystemIOU$ UM.unsafeRead tags index
+    if (tag /= (-2) && tag /= ety)
+       then Linear.do
+         Ur cached <- liftSystemIOU$ VM.unsafeRead cache index
+         explSet s tag cached
+       else pure ()
+    liftSystemIO$ UM.unsafeWrite tags  index ety
+    liftSystemIO$ VM.unsafeWrite cache index x
 
 instance (MonadIO m, ExplDestroy m s) => ExplDestroy m (Cache n s) where
   {-# INLINE explDestroy #-}
-  explDestroy (Cache mask tags cache s) ety = do
+  explDestroy (Cache mask tags cache s) ety = Linear.do
     let index = ety .&. mask
-    tag <- liftIO$ UM.unsafeRead tags (ety .&. mask)
-    when (tag == ety) $ liftIO $ do
-      UM.unsafeWrite tags  index (-2)
-      VM.unsafeWrite cache index cacheMiss
+    Ur tag <- liftSystemIOU$ UM.unsafeRead tags (ety .&. mask)
+    liftSystemIO $
+      Base.when (tag == ety) $ do
+        UM.unsafeWrite tags  index (-2)
+        VM.unsafeWrite cache index cacheMiss
     explDestroy s ety
 
 instance (MonadIO m, ExplMembers m s) => ExplMembers m (Cache n s) where
   {-# INLINE explMembers #-}
-  explMembers (Cache mask tags _ s) = do
-    cached <- liftIO$ U.filter (/= (-2)) <$> U.freeze tags
-    let etyFilter ety = (/= ety) <$> UM.unsafeRead tags (ety .&. mask)
-    stored <- explMembers s >>= liftIO . U.filterM etyFilter
-    return $! cached U.++ stored
+  explMembers (Cache mask tags _ s) = Linear.do
+    Ur cached <- liftSystemIOU$ U.filter (Base./= (-2)) Base.<$> U.freeze tags
+    let etyFilter ety = (Base./= ety) Base.<$> UM.unsafeRead tags (ety .&. mask)
+    Ur stored <- explMembers s >>= \case (Ur xs) -> liftSystemIOU (U.filterM etyFilter xs)
+    return $! Ur (cached U.++ stored)
 
 -- | Wrapper that makes a store read-only by hiding its 'ExplSet' and 'ExplDestroy' instances.
 --   This is primarily used to protect the 'EntityCounter' from accidental overwrites.
@@ -214,7 +226,7 @@ newtype ReadOnly s = ReadOnly s
 type instance Elem (ReadOnly s) = Elem s
 
 instance (Functor m, ExplInit m s) => ExplInit m (ReadOnly s) where
-  explInit = ReadOnly <$> explInit
+  explInit = (\case (Ur x) -> Ur (ReadOnly x)) <$> explInit
 
 instance ExplGet m s => ExplGet m (ReadOnly s) where
   explExists (ReadOnly s) = explExists s
@@ -231,9 +243,10 @@ setReadOnly :: forall w m s c.
   , Storage c ~ ReadOnly s
   , Elem s ~ c
   , ExplSet m s
+  , Dupable w
   ) => Entity -> c -> SystemT w m ()
-setReadOnly (Entity ety) c = do
-  ReadOnly s <- getStore
+setReadOnly (Entity ety) c = Linear.do
+  Ur (ReadOnly s) <- getStore
   lift $ explSet s ety c
 
 destroyReadOnly :: forall w m s c.
@@ -241,7 +254,8 @@ destroyReadOnly :: forall w m s c.
   , Storage c ~ ReadOnly s
   , Elem s ~ c
   , ExplDestroy m s
+  , Dupable w
   ) => Entity -> Proxy c -> SystemT w m ()
-destroyReadOnly (Entity ety) _ = do
-  ReadOnly s :: Storage c <- getStore
+destroyReadOnly (Entity ety) _ = Linear.do
+  Ur (ReadOnly s :: Storage c) <- getStore
   lift $ explDestroy s ety

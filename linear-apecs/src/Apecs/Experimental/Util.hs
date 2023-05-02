@@ -9,7 +9,12 @@ module Apecs.Experimental.Util
   quantize, flatten, inbounds, region, flatten',
   ) where
 
-import Control.Applicative  (liftA2)
+import Control.Applicative (liftA2)
+import qualified Prelude
+import Prelude.Base as Base
+-- import Control.Functor.Linear as Linear
+-- import Data.Functor.Linear as Data.Linear hiding (Functor(..), Applicative(..), (<$>))
+-- import qualified Data.Functor.Linear as Data.Linear
 
 -- $hash
 -- The following are helper functions for spatial hashing.
