@@ -48,12 +48,7 @@ instance ExplDestroy m s => ExplDestroy m (Identity s) where
   {-# INLINE explDestroy #-}
   explDestroy (Identity s) = explDestroy s
 
--- ROMES:TODO: T.makeInstances [2..8]
-instance (ExplMembers m s1, ExplMembers m s2) => ExplMembers m (s1, s2) where
-  explMembers (s1,s2) = Linear.do
-    Ur u1 <- explMembers s1
-    Ur u2 <- explMembers s2
-    pure $ Ur $ u1 U.++ u2
+T.makeInstances [2..8]
 
 -- | Pseudocomponent indicating the absence of @a@.
 --   Mainly used as e.g. @cmap $ \(a, Not b) -> c@ to iterate over entities with an @a@ but no @b@.

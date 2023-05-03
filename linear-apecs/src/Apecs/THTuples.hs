@@ -6,6 +6,7 @@ module Apecs.THTuples where
 import qualified Prelude
 import qualified Data.Vector.Unboxed as U
 import           Language.Haskell.TH
+import           Language.Haskell.TH.Syntax
 import qualified Control.Functor.Linear as Linear
 import Prelude.Base
 
@@ -14,13 +15,22 @@ instance (Component a, Component b) => Component (a, b) where
   type Storage (a,b) = (Storage a, Storage b)
 
 instance (Has w a, Has w b) => Has w (a,b) where
-  getStore = liftM2 (,) getStore getStore
+  getStore = Linear.do
+    Ur a <- getStore
+    Ur b <- getStore
+    pure (Ur (a, b))
 
 type instance Elem (a,b) = (Elem a, Elem b)
 
 instance (ExplGet a, ExplGet b) => ExplGet (a, b) where
-  explExists (sa, sb) ety = liftM2 (&&) (explExists sa ety) (explExists sb ety)
-  explGet (sa, sb) ety = liftM2 (,) (explGet sa ety) (explGet sb ety)
+  explExists (sa, sb) ety = Linear.do
+    Ur ea <- explExists sa ety
+    Ur eb <- explExists sb ety
+    pure (Ur (ea && eb))
+  explGet (sa, sb) ety = Linear.do
+    Ur a <- explGet sa ety
+    Ur b <- explGet sb ety
+    pure (Ur (a,b))
 
 instance (ExplSet a, ExplSet b) => ExplSet (a, b) where
   explSet (sa,sb) ety (a,b) = explSet sa ety a >> explSet sb ety b
@@ -28,8 +38,15 @@ instance (ExplSet a, ExplSet b) => ExplSet (a, b) where
 instance (ExplDestroy a, ExplDestroy b) => ExplDestroy (a, b) where
   explDestroy (sa, sb) ety = explDestroy sa ety >> explDestroy sb ety
 
-instance (ExplMembers a, ExplGet b) => ExplMembers (a, b) where
-  explMembers (sa, sb) = explMembers sa >>= U.filterM (explExists sb)
+instance (ExplMembers m a, ExplGet m b) => ExplMembers m (a, b) where
+  explMembers (sa, sb) = Linear.do
+    Ur xs <- explMembers sa
+    Ur.runUrT $ U.filterM (\x -> Ur.UrT $ explExists sb x) xs
+
+instance (ExplMembers m a, ExplGet m b, ExplGet m c) => ExplMembers m (a, b, c) where
+  explMembers (sa, sb, sc) = Linear.do
+    Ur sas <- explMembers sa
+    Ur.runUrT $ U.filterM (\x -> Ur.UrT $ explExists sb x) sas Prelude.Base.>>= U.filterM (\x -> Ur.UrT $ explExists sb x)
 --}
 
 -- | Generate tuple instances for the following tuple sizes.
@@ -47,6 +64,15 @@ tupleInstances n = do
       -- ''(t_0, t_1, .. )
       varTuple :: Type
       varTuple = tupleUpT vars
+
+      tupleNExp = TupE [Just (VarE (mkName $ "x" ++ show i)) | i <- [1..n]]
+
+      urN = mkName "Ur"
+      pureN = mkName "pure"
+
+      pureUrN = (VarE pureN) `AppE` (ConE urN `AppE` tupleNExp)
+
+      xEs = [VarE (mkName $ "x" ++ show i) | i <- [1..n]]
 
       tupleName :: Name
       tupleName = tupleDataName n
@@ -66,6 +92,8 @@ tupleInstances n = do
 #endif
         ]
 
+      dupableC = ConT (mkName "Dupable") `AppT` VarT (mkName "w")
+
       -- Has
       hasN = mkName "Has"
       hasT var = ConT hasN `AppT` VarT (mkName "w") `AppT` m `AppT` var
@@ -73,9 +101,11 @@ tupleInstances n = do
       getStoreE = VarE getStoreN
       apN = mkName "<*>"
       apE = VarE apN
-      hasI = InstanceD Nothing (hasT <$> vars) (hasT varTuple)
+      hasI = InstanceD Nothing (dupableC : (hasT <$> vars)) (hasT varTuple)
         [ FunD getStoreN
-          [Clause [] (NormalB$ liftAll tuplE (replicate n getStoreE )) [] ]
+          -- Assumes Control.Functor.Linear as Linear is imported
+          [Clause [] (NormalB$ DoE (Just (ModName "Linear")) ([ BindS (ConP urN [] [VarP (mkName $ "x" ++ show i)]) getStoreE | i <- [1..n] ] ++ [ NoBindS pureUrN ]) --liftAll tuplE (replicate n getStoreE )
+                     ) [] ]
         , PragmaD$ InlineP getStoreN Inline FunLike AllPhases
         ]
 
@@ -147,15 +177,24 @@ tupleInstances n = do
 #endif
                     ])
 
+      --                                  vvv Must be unrestricted for instance to be correct! (we're using UrT)
       explMembersFold va vb = AppE (VarE '(>>=)) va `AppE` AppE (VarE 'U.filterM) vb
 
       getI = InstanceD Nothing (getT <$> vars) (getT varTuple)
         [ FunD explGetN [Clause [sPat, etyPat]
-            (NormalB$ liftAll tuplE (explGetF <$> sEs)) [] ]
+              ( NormalB$
+                DoE (Just (ModName "Linear"))
+                    ([ BindS (ConP urN [] [VarP (mkName $ "x" ++ show i)]) (explGetF sE) | (sE, i) <- zip sEs [1..] ] ++ [ NoBindS pureUrN ])
+              )
+              [] ]
         , PragmaD$ InlineP explGetN Inline FunLike AllPhases
 
         , FunD explExistsN [Clause [sPat, etyPat]
-            (NormalB$ foldr explExistsAnd (AppE (VarE 'pure) (ConE 'True)) ((`AppE` etyE) . explExistsF <$> sEs)) [] ]
+            (NormalB$
+                DoE (Just (ModName "Linear"))
+                    ([ BindS (ConP urN [] [VarP (mkName $ "x" ++ show i)]) (explExistsF sE `AppE` etyE) | (sE, i) <- zip sEs [1..] ] ++ [ NoBindS $ (VarE pureN) `AppE` (ConE urN `AppE` (foldr (\x y -> UInfixE x (VarE (mkName "&&")) y) (ConE 'True) xEs) ) ])
+                -- foldr explExistsAnd (AppE (VarE 'pure) (ConE 'True)) ((`AppE` etyE) . explExistsF <$> sEs)
+            ) [] ]
         , PragmaD$ InlineP explExistsN Inline FunLike AllPhases
         ]
 
@@ -173,8 +212,24 @@ tupleInstances n = do
 
       membersI = InstanceD Nothing (membersT (head vars) : (getT <$> tail vars)) (membersT varTuple)
         [ FunD explMembersN [Clause [sPat]
-            (NormalB$ foldl explMembersFold (explMembersF (head sEs)) (explExistsF <$> tail sEs)) [] ]
+            (NormalB$
+              DoE (Just (ModName "Linear"))
+                  ([BindS (ConP urN [] [VarP (mkName "xs")]) (explMembersF (head sEs))] ++
+                   [NoBindS $
+                     ( VarE (mkName "Ur.runUrT") `AppE`
+                      ( foldl explMembersFold
+                              (VarE 'U.filterM `AppE` (LamE [VarP (mkName "x")] ((ConE $ mkName "Ur.UrT") `AppE` (explExistsF (sEs !! 1) `AppE` (VarE (mkName "x"))))) `AppE` VarE (mkName "xs"))
+                              ((\se -> LamE [VarP (mkName "x")] ((ConE $ mkName "Ur.UrT") `AppE` (explExistsF se `AppE` (VarE (mkName "x"))))) <$> drop 2 sEs)
+                      )
+                     )
+                   ]
+                  )
+            ) [] ]
         , PragmaD$ InlineP explMembersN Inline FunLike AllPhases
         ]
+-- instance (ExplMembers a, ExplGet b) => ExplMembers (a, b) where
+--   explMembers (sa, sb) = Linear.do
+--     Ur sas <- explMembers sa
+--     Ur.runUrT U.filterM (\x -> Ur.UrT (explExists sb x)) sas
 
   return [compI, hasI, elemI, getI, setI, destroyI, membersI]
