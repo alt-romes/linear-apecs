@@ -23,7 +23,8 @@ import qualified Data.Vector.Unboxed  as U
 --   In general, use @newEntity@, @cmap@, and component tags instead of manipulating these directly.
 --
 --   For performance reasons, negative values like (-1) are reserved for stores to represent special values, so avoid using these.
-newtype Entity = Entity {unEntity :: Int} deriving (FromInteger, Multiplicative, MultIdentity, Semiring, Additive, AddIdentity, AdditiveGroup, Ring, Num, Eq, Ord, Show, Enum, Base.Num, Base.Eq)
+newtype Entity = Entity {unEntity :: Int} deriving (FromInteger, Multiplicative, MultIdentity, Semiring, Additive, AddIdentity, AdditiveGroup, Ring, Num, Eq, Ord, Show, Enum, Base.Num, Base.Eq,
+                                                    Dupable, Consumable, Movable)
 
 -- | A SystemT is a newtype around `ReaderT w m a`, where `w` is the game world variable.
 --   Systems serve to
