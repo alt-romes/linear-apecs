@@ -33,9 +33,9 @@ module Apecs.Linear (
 -- import           Control.Monad.Reader (ask, asks, lift)
 import           Data.Proxy
 
-import           Apecs.Components
-import           Apecs.Core
-import           Apecs.Stores
-import           Apecs.System
+import           Apecs.Linear.Components
+import           Apecs.Linear.Core
+import           Apecs.Linear.Stores
+import           Apecs.Linear.System
 -- import           Apecs.TH
-import           Apecs.Util
+import           Apecs.Linear.Util

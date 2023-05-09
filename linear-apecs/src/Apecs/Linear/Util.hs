@@ -8,7 +8,7 @@
 {-# LANGUAGE Strict                     #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-module Apecs.Util (
+module Apecs.Linear.Util (
   -- * Utility
   -- runGC,
   global,
@@ -23,9 +23,9 @@ import           Control.Monad.IO.Class.Linear
 import           Data.Monoid.Linear
 import           System.Mem           (performMajorGC)
 
-import           Apecs.Core
-import           Apecs.Stores
-import           Apecs.System
+import           Apecs.Linear.Core
+import           Apecs.Linear.Stores
+import           Apecs.Linear.System
 
 -- | Convenience entity, for use in places where the entity value does not matter, i.e. a global store.
 global :: Entity

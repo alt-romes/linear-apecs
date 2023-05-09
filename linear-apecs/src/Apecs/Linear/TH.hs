@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies    #-}
 
-module Apecs.TH
+module Apecs.Linear.TH
   ( makeWorld
   , makeWorldNoEC
   , makeWorldAndComponents
@@ -12,9 +12,9 @@ module Apecs.TH
 import           Control.Monad
 import           Language.Haskell.TH
 
-import           Apecs.Core
-import           Apecs.Stores
-import           Apecs.Util          (EntityCounter)
+import           Apecs.Linear.Core
+import           Apecs.Linear.Stores
+import           Apecs.Linear.Util          (EntityCounter)
 
 genName :: String -> Q Name
 genName s = mkName . show <$> newName s

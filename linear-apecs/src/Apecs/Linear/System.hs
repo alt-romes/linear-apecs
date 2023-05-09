@@ -5,15 +5,15 @@
 {-# LANGUAGE Strict                #-}
 {-# LANGUAGE LambdaCase            #-}
 
-module Apecs.System where
+module Apecs.Linear.System where
 
 import           Control.Functor.Linear as Linear hiding (modify)
 import           Data.Proxy
 import qualified Data.Vector.Unboxed  as U
 import qualified Data.Unrestricted.Linear as Ur
 
-import Apecs.Components ()
-import Apecs.Core
+import Apecs.Linear.Components ()
+import Apecs.Linear.Core
 
 -- | Run a system in a game world
 {-# INLINE runSystem #-}

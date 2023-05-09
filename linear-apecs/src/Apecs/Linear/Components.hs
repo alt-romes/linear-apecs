@@ -11,14 +11,14 @@
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-module Apecs.Components where
+module Apecs.Linear.Components where
 
 import Data.Functor.Identity
 import qualified Prelude.Base
 import qualified Data.Unrestricted.Linear as Ur
 
-import           Apecs.Core
-import qualified Apecs.THTuples as T
+import           Apecs.Linear.Core
+import qualified Apecs.Linear.THTuples as T
 import Control.Functor.Linear as Linear
 import qualified Data.Vector.Unboxed  as U
 

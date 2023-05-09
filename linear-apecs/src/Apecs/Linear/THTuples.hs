@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE CPP #-}
 
-module Apecs.THTuples where
+module Apecs.Linear.THTuples where
 
 import qualified Prelude
 import qualified Data.Vector.Unboxed as U

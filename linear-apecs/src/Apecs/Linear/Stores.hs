@@ -9,7 +9,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-module Apecs.Stores
+module Apecs.Linear.Stores
   ( Map, Cache, Unique,
     Global,
     Cachable,
@@ -33,7 +33,7 @@ import qualified Data.Vector.Unboxed         as U
 import qualified Data.Vector.Unboxed.Mutable as UM
 import           GHC.TypeLits
 
-import           Apecs.Core
+import           Apecs.Linear.Core
 
 -- | A map based on 'Data.IntMap.Strict'. O(log(n)) for most operations.
 newtype Map c = Map (IORef (M.IntMap c))

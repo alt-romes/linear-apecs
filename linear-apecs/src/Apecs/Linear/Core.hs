@@ -9,7 +9,7 @@
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-module Apecs.Core where
+module Apecs.Linear.Core where
 
 import qualified Prelude.Base as Base
 import           Control.Functor.Linear
